@@ -14,11 +14,13 @@ from cache.custom_cache import Cache
 # Load environment variables
 load_dotenv()
 
-app = FastAPI()
+app = FastAPI(title="Twitter Search API", version="1.0.0")
 
 origins = [
     "http://localhost",
     "http://localhost:3000",
+    "https://your-frontend-domain.vercel.app",  # Update with your frontend URL
+    "*"  # For development - remove in production
 ]
 
 app.add_middleware(
@@ -31,7 +33,7 @@ app.add_middleware(
 
 
 # Connect to Tweet Database
-client = pymongo.MongoClient("mongodb+srv://sk2953:SxVbw2sAorNNdbHJ@twitter.3lvckfi.mongodb.net/?retryWrites=true&w=majority&appName=Twitter")
+client = pymongo.MongoClient(os.getenv('MONGODB_URI'))
 db = client["twitter-database"]
 tweets_collection = db["tweets"]
 
@@ -40,9 +42,8 @@ tweets_collection = db["tweets"]
 def connect_to_supabase():
     """Connect to Supabase database"""
     try:
-        supabase_url = 'https://krvusrtfpyfuxdpqtxww.supabase.co'
-        supabase_key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtydnVzcnRmcHlmdXhkcHF0eHd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM0MDUyMTYsImV4cCI6MjA2ODk4MTIxNn0.vOY8_ZY8SEZ5TIMihgnIfDL5jdEVvYhQM5ap_r8mrOg'
-        
+        supabase_url = os.getenv('SUPABASE_URL')
+        supabase_key = os.getenv('SUPABASE_ANON_KEY')
         if not supabase_url or not supabase_key:
             raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY must be set")
         
@@ -53,8 +54,30 @@ def connect_to_supabase():
         print(f"Error occurred while connecting to Supabase: {e}")
         return None
 
-# Initialize Supabase connection
+# Initialize database connections
+mongo_client = connect_to_mongodb()
 supabase = connect_to_supabase()
+
+# Initialize database objects
+if mongo_client:
+    db = mongo_client["twitter-database"]
+    tweets_collection = db["tweets"]
+else:
+    tweets_collection = None
+
+# Initialize cache
+cache = Cache()
+
+
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {
+        "message": "Twitter Search API is running!",
+        "status": "healthy",
+        "mongodb": "connected" if mongo_client else "disconnected",
+        "supabase": "connected" if supabase else "disconnected"
+    }
 
 
 @app.get("/hashtags")
@@ -63,6 +86,10 @@ async def get_hashtags():
     if cache.get('trendinghashtags'):
         print(f"Trending hashtags from cache: {time.time() - start_time} seconds")
         return cache.get('trendinghashtags')[0]
+    
+    if not tweets_collection:
+        return {"error": "MongoDB not connected"}
+    
     pipeline = [
         {"$unwind": "$hashtag"},
         {"$group": {"_id": "$hashtag", "count": {"$sum": 1}}},
@@ -83,6 +110,9 @@ async def get_hashtags():
 
 @app.get('/recenttweets')
 async def get_recent_tweets():
+    if not tweets_collection:
+        return {"error": "MongoDB not connected"}
+    
     most_recent_tweets = tweets_collection.find({}).sort("created_at", -1).limit(10)
     tweets = []
 
@@ -98,6 +128,10 @@ async def get_trending_tweets():
     if cache.get('trendingtweets'):
         print(f"Trending tweets from cache: {time.time() - start_time} seconds")
         return cache.get('trendingtweets')[0]
+    
+    if not tweets_collection:
+        return {"error": "MongoDB not connected"}
+    
     most_recent_tweets = tweets_collection.find({}).sort("tweet_score", -1).limit(10)
     tweets = []
 
@@ -114,6 +148,9 @@ async def get_trending_users():
     if cache.get('trendingusers'):
         print(f"Trending users from cache: {time.time() - start_time} seconds")
         return cache.get('trendingusers')[0]
+    
+    if not supabase:
+        return {"error": "Supabase not connected"}
     
     try:
         # Use Supabase to query users table
@@ -147,6 +184,9 @@ async def get_trending_users():
 
 @app.get('/gettweetsbyuserid')
 async def get_recent_tweets(user_id:str=''):
+    if not tweets_collection:
+        return {"error": "MongoDB not connected"}
+    
     tweets = []
     user_tweets = tweets_collection.find({"user_screen_name": user_id[1:]}).sort("tweet_score", -1)
     for tweet in user_tweets:
@@ -162,6 +202,9 @@ async def get_filtered_tweets(search:str='', ishashtag: bool = False):
             print(f"Cached result in {time.time() - start_time} seconds")
             return cache.get(search)[0]
         search_string = search[1:]
+        
+        if not supabase:
+            return {"error": "Supabase not connected"}
         
         try:
             # Use Supabase to search users by screen_name
@@ -194,6 +237,10 @@ async def get_filtered_tweets(search:str='', ishashtag: bool = False):
         if cache.get(search):
             print(f"Cached result in {time.time() - start_time} seconds")
             return cache.get(search)[0]
+        
+        if not tweets_collection:
+            return {"error": "MongoDB not connected"}
+        
         matched_tweets = tweets_collection.find({"hashtag": {"$in": [search]}}).sort("tweet_score", -1).limit(10)
         tweets = []
         for tweet in matched_tweets:
@@ -206,6 +253,10 @@ async def get_filtered_tweets(search:str='', ishashtag: bool = False):
         if cache.get(search):
             print(f"Cached result in {time.time() - start_time} seconds")
             return cache.get(search)[0]
+        
+        if not tweets_collection:
+            return {"error": "MongoDB not connected"}
+        
         matching_tweets = tweets_collection.find({"$text": {"$search": search}}).sort("tweet_score", -1)
         tweets = []
         for tweet in matching_tweets:
@@ -215,5 +266,6 @@ async def get_filtered_tweets(search:str='', ishashtag: bool = False):
         return tweets
 
 
-cache = Cache()
-print(cache.last_checkpoint)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
