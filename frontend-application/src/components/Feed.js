@@ -51,21 +51,22 @@ function Feed({activeState,setActiveState}) {
   }
   useEffect(() => {
     console.log('Calling API')
-    var api = 'http://localhost:8000/recenttweets'
+    var API_BASE_URL = os.getenv('API_BASE_URL')
+    var api = API_BASE_URL + '/recenttweets'
     if(activeState=='TWEETS'){
-        api = 'http://localhost:8000/trendingtweets'
+        api = API_BASE_URL + '/trendingtweets'
     }
     else if(activeState == 'USERS'){
-        api = 'http://localhost:8000/trendingusers'
+        api = API_BASE_URL + '/trendingusers'
     }
     else if(activeState=='SEARCHBYTEXT' || activeState=='SEARCHBYUSERID'){
-        api = 'http://localhost:8000/filterby?search='.concat(searchBy)
+        api = API_BASE_URL + '/filterby?search='.concat(searchBy)
     }
     else if (activeState=='SEARCHBYHASH'){
-      api = 'http://localhost:8000/filterby?search='.concat(searchBy.substring(1)).concat('&&ishashtag=true')
+      api = API_BASE_URL + '/filterby?search='.concat(searchBy.substring(1)).concat('&&ishashtag=true')
     }
     else if(activeState=='SEARCHTWEETSBYUSERID'){
-      api='http://localhost:8000/gettweetsbyuserid?user_id='.concat(searchBy)
+      api = API_BASE_URL + '/gettweetsbyuserid?user_id='.concat(searchBy)
     }
 
     axios.get(api)
