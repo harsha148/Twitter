@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: twitter-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn search:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SUPABASE_URL
+        value: https://krvusrtfpyfuxdpqtxww.supabase.co
+      - key: SUPABASE_ANON_KEY
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtydnVzcnRmcHlmdXhkcHF0eHd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM0MDUyMTYsImV4cCI6MjA2ODk4MTIxNn0.vOY8_ZY8SEZ5TIMihgnIfDL5jdEVvYhQM5ap_r8mrOg
+      - key: MONGODB_URI
+        value: mongodb+srv://sk2953:SxVbw2sAorNNdbHJ@twitter.3lvckfi.mongodb.net/?retryWrites=true&w=majority&appName=Twitter
+      - key: REDIS_URL
+        value: redis://default:6vAXtvrFigwPrxzpYgn0Gbb9mmh3U3Us@redis-13781.c273.us-east-1-2.ec2.redns.redis-cloud.com:13781 

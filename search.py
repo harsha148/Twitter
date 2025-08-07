@@ -1,13 +1,18 @@
 import pymongo
-import psycopg2
 import time
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from supabase import create_client, Client
+from dotenv import load_dotenv
 
 from model.Tweet import create_tweet_object
 from model.User import create_user_object
 from model.Hashtag import create_hashtag_object
 from cache.custom_cache import Cache
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI()
 
@@ -26,19 +31,30 @@ app.add_middleware(
 
 
 # Connect to Tweet Database
-client = pymongo.MongoClient("mongodb://localhost:27017/")
+client = pymongo.MongoClient("mongodb+srv://sk2953:SxVbw2sAorNNdbHJ@twitter.3lvckfi.mongodb.net/?retryWrites=true&w=majority&appName=Twitter")
 db = client["twitter-database"]
 tweets_collection = db["tweets"]
 
 
-# Connect to User Database
-conn = psycopg2.connect(
-    dbname="twitter-database",
-    user='postgres',
-    password='king',
-    host='localhost'
-)
-user_db_cursor = conn.cursor()
+# Connect to User Database (Supabase)
+def connect_to_supabase():
+    """Connect to Supabase database"""
+    try:
+        supabase_url = 'https://krvusrtfpyfuxdpqtxww.supabase.co'
+        supabase_key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtydnVzcnRmcHlmdXhkcHF0eHd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM0MDUyMTYsImV4cCI6MjA2ODk4MTIxNn0.vOY8_ZY8SEZ5TIMihgnIfDL5jdEVvYhQM5ap_r8mrOg'
+        
+        if not supabase_url or not supabase_key:
+            raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY must be set")
+        
+        supabase: Client = create_client(supabase_url, supabase_key)
+        print("Connected to Supabase database")
+        return supabase
+    except Exception as e:
+        print(f"Error occurred while connecting to Supabase: {e}")
+        return None
+
+# Initialize Supabase connection
+supabase = connect_to_supabase()
 
 
 @app.get("/hashtags")
@@ -98,19 +114,35 @@ async def get_trending_users():
     if cache.get('trendingusers'):
         print(f"Trending users from cache: {time.time() - start_time} seconds")
         return cache.get('trendingusers')[0]
-    query = """select id,name,screen_name,verified,location,description,followers_count,friends_count,tweets_count from users 
-     order by followers_count DESC,tweets_count DESC 
-     limit 10"""
-
-    user_db_cursor.execute(query)
-    top_10_users = user_db_cursor.fetchall()
-
-    users = []
-    for user in top_10_users:
-        users.append(create_user_object(user))
-    cache.put('trendingusers', users)
-    print(f"Fetching trending users from database: {time.time() - start_time} seconds")
-    return users
+    
+    try:
+        # Use Supabase to query users table
+        response = supabase.table('users').select(
+            'id,name,screen_name,verified,location,description,followers_count,friends_count,tweets_count'
+        ).order('followers_count', desc=True).order('tweets_count', desc=True).limit(10).execute()
+        
+        users = []
+        for user_data in response.data:
+            # Convert Supabase response to tuple format expected by create_user_object
+            user_tuple = (
+                user_data.get('id'),
+                user_data.get('name'),
+                user_data.get('screen_name'),
+                user_data.get('verified'),
+                user_data.get('location'),
+                user_data.get('description'),
+                user_data.get('followers_count'),
+                user_data.get('friends_count'),
+                user_data.get('tweets_count')
+            )
+            users.append(create_user_object(user_tuple))
+        
+        cache.put('trendingusers', users)
+        print(f"Fetching trending users from database: {time.time() - start_time} seconds")
+        return users
+    except Exception as e:
+        print(f"Error fetching trending users: {e}")
+        return []
 
 
 @app.get('/gettweetsbyuserid')
@@ -130,20 +162,34 @@ async def get_filtered_tweets(search:str='', ishashtag: bool = False):
             print(f"Cached result in {time.time() - start_time} seconds")
             return cache.get(search)[0]
         search_string = search[1:]
-        query = """
-                SELECT * FROM users 
-                WHERE screen_name LIKE %s 
-                ORDER BY followers_count DESC, tweets_count DESC, verified DESC
-                LIMIT 10
-                """
-        user_db_cursor.execute(query, ('%' + search_string + '%',))
-        results = user_db_cursor.fetchall()
-        users = []
-        for user in results:
-            users.append(create_user_object(user))
-        cache.put(search, users)
-        print(f"Fetching from database {time.time() - start_time} seconds")
-        return users
+        
+        try:
+            # Use Supabase to search users by screen_name
+            response = supabase.table('users').select('*').ilike('screen_name', f'%{search_string}%').order('followers_count', desc=True).order('tweets_count', desc=True).order('verified', desc=True).limit(10).execute()
+            
+            users = []
+            for user_data in response.data:
+                # Convert Supabase response to tuple format expected by create_user_object
+                user_tuple = (
+                    user_data.get('id'),
+                    user_data.get('name'),
+                    user_data.get('screen_name'),
+                    user_data.get('verified'),
+                    user_data.get('location'),
+                    user_data.get('description'),
+                    user_data.get('followers_count'),
+                    user_data.get('friends_count'),
+                    user_data.get('tweets_count')
+                )
+                users.append(create_user_object(user_tuple))
+            
+            cache.put(search, users)
+            print(f"Fetching from database {time.time() - start_time} seconds")
+            return users
+        except Exception as e:
+            print(f"Error searching users: {e}")
+            return []
+            
     elif ishashtag:
         if cache.get(search):
             print(f"Cached result in {time.time() - start_time} seconds")

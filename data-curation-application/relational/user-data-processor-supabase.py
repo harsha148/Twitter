@@ -190,7 +190,7 @@ def create_indexes(supabase):
         CREATE INDEX IF NOT EXISTS idx_users_verified ON users(verified);
         """
         
-        result = supabase.rpc('exec_sql', {'sql': index_query}).execute()
+        result = supabase.rpc('execute_sql', {'sql': index_query}).execute()
         print("Indexes created successfully")
         return True
     except Exception as e:
@@ -214,13 +214,13 @@ def main():
     
     # Load user data from file
     # Update this path to your user data file
-    file_path = "../data/corona-out-2"  # Update this path
+    file_path = "../data/corona-out-3"  # Update this path
     
     if os.path.exists(file_path):
         load_user_data_to_supabase(supabase, file_path)
         
         # Create indexes for better performance
-        create_indexes(supabase)
+        # create_indexes(supabase)
         
         print("User data processing completed successfully!")
     else:
